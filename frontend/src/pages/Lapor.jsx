@@ -10,6 +10,9 @@ const Lapor = () => {
   const { signer } = useWallet();
 
   // Local state untuk form
+  const [tanggal, setTanggal] = useState('');
+  const [lokasi, setLokasi] = useState('');
+  const [kronologi, setKronologi] = useState('');
   const [file, setFile] = useState(null);
   const [status, setStatus] = useState('idle'); // 'idle' | 'loading' | 'success'
   const [error, setError] = useState('');
@@ -28,6 +31,10 @@ const Lapor = () => {
       setError("Hubungkan wallet MetaMask terlebih dahulu.");
       return;
     }
+    if (!tanggal || !lokasi || !kronologi) {
+      setError("Semua field teks (tanggal, lokasi, kronologi) wajib diisi!");
+      return;
+    }
     if (!file) {
       setError("Pilih file bukti terlebih dahulu!");
       return;
@@ -39,14 +46,28 @@ const Lapor = () => {
     try {
       // 1. Generate Kunci & Enkripsi (Web Crypto API)
       const encryptionKey = await generateKey();
+      
+      // Enkripsi file bukti
       const encryptedFile = await encryptFile(file, encryptionKey);
       
+      // Enkripsi file teks metadata (tanggal, lokasi, kronologi)
+      const metadata = {
+        tanggal,
+        lokasi,
+        kronologi,
+        fileName: file.name
+      };
+      const metadataJson = JSON.stringify(metadata, null, 2);
+      const metadataFile = new File([metadataJson], 'metadata.json', { type: 'application/json' });
+      const encryptedMetadata = await encryptFile(metadataFile, encryptionKey);
+      
       // 2. Upload ke Pinata / IPFS (Axios)
-      const cid = await uploadToIPFS([encryptedFile]);
+      // Mengunggah file bukti terenkripsi dan metadata terenkripsi dalam satu bundel folder
+      const cid = await uploadToIPFS([encryptedFile, encryptedMetadata]);
       
       // 3. Kirim ke Smart Contract via ethers.js
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
-      const fileType = file.type;
+      const fileType = file.type || 'application/octet-stream';
 
       // Memanggil fungsi kontrak yang akan memicu popup MetaMask
       const tx = await contract.submitReport(cid, fileType, encryptionKey);
@@ -56,7 +77,12 @@ const Lapor = () => {
 
       alert("Laporan berhasil dikirim ke blockchain!");
       setStatus('success');
-      setFile(null); // Reset form setelah sukses
+      
+      // Reset form setelah sukses
+      setTanggal('');
+      setLokasi('');
+      setKronologi('');
+      setFile(null); 
       
     } catch (err) {
       console.error("Gagal mengirim laporan:", err);
@@ -82,17 +108,34 @@ const Lapor = () => {
         <div style={styles.card}>
           <div style={styles.inputGroup}>
             <label style={styles.label}>Kapan kejadian ini terjadi?</label>
-            <input type="datetime-local" style={styles.input} />
+            <input 
+              type="datetime-local" 
+              style={styles.input} 
+              value={tanggal}
+              onChange={(e) => setTanggal(e.target.value)}
+            />
           </div>
           
           <div style={styles.inputGroup}>
             <label style={styles.label}>Di mana lokasi kejadian?</label>
-            <input type="text" placeholder="Gedung, Ruangan, atau Area..." style={styles.input} />
+            <input 
+              type="text" 
+              placeholder="Gedung, Ruangan, atau Area..." 
+              style={styles.input} 
+              value={lokasi}
+              onChange={(e) => setLokasi(e.target.value)}
+            />
           </div>
           
           <div style={styles.inputGroup}>
             <label style={styles.label}>Ceritakan kronologi lengkap</label>
-            <textarea rows="6" style={styles.input} placeholder="Kejadian ini dimulai saat..."></textarea>
+            <textarea 
+              rows="6" 
+              style={styles.input} 
+              placeholder="Kejadian ini dimulai saat..."
+              value={kronologi}
+              onChange={(e) => setKronologi(e.target.value)}
+            ></textarea>
           </div>
 
           <div style={styles.uploadArea}>
