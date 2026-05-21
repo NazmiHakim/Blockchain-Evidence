@@ -1,29 +1,17 @@
 import React from 'react';
-import { ethers } from 'ethers';
+// 1. Import useWallet dari context
+import { useWallet } from '../context/WalletContext'; 
 
 const ConnectWallet = ({ isOpen, onClose }) => {
+  // 2. Ambil fungsi connect dari context
+  const { connect } = useWallet();
+
   if (!isOpen) return null;
 
-  const connectToMetaMask = async () => {
-    // 1. Cek apakah MetaMask terpasang di browser
-    if (window.ethereum) {
-      try {
-        // 2. Minta izin akses akun ke user
-        const accounts = await window.ethereum.request({ 
-          method: 'eth_requestAccounts' 
-        });
-        
-        console.log("Connected to:", accounts[0]);
-        alert("Berhasil terhubung ke: " + accounts[0]);
-        
-        // 3. Tutup modal setelah berhasil
-        onClose(); 
-      } catch (error) {
-        console.error("User menolak koneksi", error);
-      }
-    } else {
-      alert("Wah, MetaMask belum terpasang nih. Instal dulu ya di browser kamu!");
-    }
+  const handleConnect = async () => {
+    // 3. Panggil fungsi connect dari context, lalu tutup modal
+    await connect();
+    onClose(); 
   };
 
   return (
@@ -34,11 +22,10 @@ const ConnectWallet = ({ isOpen, onClose }) => {
           Pilih provider wallet untuk masuk ke sistem PIJAR secara anonim.
         </p>
         
-        {/* Tambahkan onClick di sini */}
         <button 
           className="btn-pijar" 
           style={styles.providerBtn}
-          onClick={connectToMetaMask}
+          onClick={handleConnect} // Gunakan handleConnect di sini
         >
           🦊 MetaMask
         </button>

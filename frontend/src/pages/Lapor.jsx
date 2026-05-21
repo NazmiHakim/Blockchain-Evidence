@@ -1,6 +1,78 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { useWallet } from '../context/WalletContext';
+import { ethers } from 'ethers';
+import { CONTRACT_ADDRESS, CONTRACT_ABI } from '../contracts/config'; // Sesuaikan path jika berbeda
+import { generateKey, encryptFile } from '../utils/encryption'; // Sesuaikan path
+import { uploadToIPFS } from '../utils/ipfs'; // Sesuaikan path
 
 const Lapor = () => {
+  // Mengambil state signer dari WalletContext
+  const { signer } = useWallet();
+
+  // Local state untuk form
+  const [file, setFile] = useState(null);
+  const [status, setStatus] = useState('idle'); // 'idle' | 'loading' | 'success'
+  const [error, setError] = useState('');
+
+  // Handle saat user memilih file
+  const handleFileChange = (e) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setFile(e.target.files[0]);
+      setError(''); // Reset error kalau ada
+    }
+  };
+
+  const handleFormSubmit = async () => {
+    // Validasi awal
+    if (!signer) {
+      setError("Hubungkan wallet MetaMask terlebih dahulu.");
+      return;
+    }
+    if (!file) {
+      setError("Pilih file bukti terlebih dahulu!");
+      return;
+    }
+
+    setStatus('loading');
+    setError('');
+
+    try {
+      // 1. Generate Kunci & Enkripsi (Web Crypto API)
+      const encryptionKey = await generateKey();
+      const encryptedFile = await encryptFile(file, encryptionKey);
+      
+      // 2. Upload ke Pinata / IPFS (Axios)
+      const cid = await uploadToIPFS([encryptedFile]);
+      
+      // 3. Kirim ke Smart Contract via ethers.js
+      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+      const fileType = file.type;
+
+      // Memanggil fungsi kontrak yang akan memicu popup MetaMask
+      const tx = await contract.submitReport(cid, fileType, encryptionKey);
+      
+      // Menunggu konfirmasi jaringan
+      await tx.wait(); 
+
+      alert("Laporan berhasil dikirim ke blockchain!");
+      setStatus('success');
+      setFile(null); // Reset form setelah sukses
+      
+    } catch (err) {
+      console.error("Gagal mengirim laporan:", err);
+      // Penanganan error sesuai instruksi dari panduan integration
+      if (err.code === 4001) {
+        // Kode 4001 = user reject di MetaMask
+        setError('Kamu membatalkan transaksi di MetaMask.');
+      } else if (err.message?.includes('network')) {
+        setError('Koneksi bermasalah. Cek internet dan coba lagi.');
+      } else {
+        setError('Terjadi kesalahan: ' + (err.reason || err.message));
+      }
+      setStatus('idle');
+    }
+  };
+
   return (
     <div style={{ padding: '60px 120px' }}>
       <p style={{ color: 'var(--royal-blue)', fontWeight: 'bold', fontSize: '14px' }}>FORMULIR AMAN</p>
@@ -24,12 +96,27 @@ const Lapor = () => {
           </div>
 
           <div style={styles.uploadArea}>
-             <p>📤 Seret file bukti ke sini atau klik untuk memilih</p>
+             <input 
+               type="file" 
+               onChange={handleFileChange}
+               style={{ marginBottom: '10px', color: '#fff' }}
+             />
+             <p style={{ margin: '10px 0 5px' }}>
+               {file ? `✅ ${file.name} terpilih` : '📤 Pilih file bukti dari perangkat Anda'}
+             </p>
              <span style={{ color: '#555', fontSize: '12px' }}>Bukti Anda akan langsung dienkripsi sebelum masuk ke IPFS</span>
           </div>
 
-          <button className="btn-pijar" style={{ width: '100%', marginTop: '30px', padding: '18px' }}>
-            Kirim Laporan ke Blockchain
+          {/* Menampilkan pesan error jika ada */}
+          {error && <p style={{ color: '#ff4d4d', marginTop: '15px', fontSize: '14px' }}>❌ {error}</p>}
+
+          <button 
+            className="btn-pijar" 
+            style={{ width: '100%', marginTop: '30px', padding: '18px', opacity: status === 'loading' ? 0.7 : 1 }}
+            onClick={handleFormSubmit}
+            disabled={status === 'loading'}
+          >
+            {status === 'loading' ? 'Mengenkripsi & Mengirim Transaksi...' : 'Kirim Laporan ke Blockchain'}
           </button>
         </div>
 
@@ -67,12 +154,18 @@ const styles = {
     marginBottom: '25px',
     boxSizing: 'border-box'
   },
+  inputGroup: {
+    marginBottom: '20px'
+  },
   uploadArea: {
     border: '2px dashed #333',
     padding: '40px',
     textAlign: 'center',
     borderRadius: '16px',
-    background: 'rgba(255,255,255,0.01)'
+    background: 'rgba(255,255,255,0.01)',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center'
   },
   pijarBox: {
     background: 'rgba(77, 108, 250, 0.05)',
