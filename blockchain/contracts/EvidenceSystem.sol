@@ -78,4 +78,24 @@ contract EvidenceSystem {
     function getReportCount() external view returns (uint256) {
         return reportCount;
     }
+
+    // fungsi 5 untuk mendapatkan daftar ID laporan milik pengirim (pelapor)
+    function getMyReports() external view returns (uint256[] memory) {
+        uint256 count = 0;
+        for (uint256 i = 1; i <= reportCount; i++) {
+            if (reports[i].reporter == msg.sender) {
+                count++;
+            }
+        }
+        
+        uint256[] memory myIds = new uint256[](count);
+        uint256 index = 0;
+        for (uint256 i = 1; i <= reportCount; i++) {
+            if (reports[i].reporter == msg.sender) {
+                myIds[index] = i;
+                index++;
+            }
+        }
+        return myIds;
+    }
 }

@@ -6,7 +6,7 @@ import { CONTRACT_ADDRESS, CONTRACT_ABI } from '../contracts/config';
 
 const DashboardSatgas = () => {
   const navigate = useNavigate();
-  const { isSatgas, account } = useWallet();
+  const { account } = useWallet();
 
   const [loading, setLoading] = useState(true);
   const [reports, setReports] = useState([]);
@@ -14,17 +14,21 @@ const DashboardSatgas = () => {
   const [error, setError] = useState('');
   const [filterStatus, setFilterStatus] = useState('all'); // 'all' | '0' | '1' | '2'
 
+  // State untuk Role Admin Kontrak
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [whitelistAddress, setWhitelistAddress] = useState('');
+  const [adminUpdating, setAdminUpdating] = useState(false);
+
   const STATUS_TEXT = ['SUBMITTED', 'SEDANG DIPROSES', 'SELESAI'];
   const STATUS_COLORS = ['#4D6CFA', '#FFFF2E', '#27AE60'];
 
   useEffect(() => {
-    // Proteksi halaman: pastikan pengguna terhubung sebagai Satgas
-    if (!isSatgas) {
+    if (!account) {
       navigate('/403');
       return;
     }
 
-    const fetchReports = async () => {
+    const verifyRoleAndFetch = async () => {
       setLoading(true);
       setError('');
       try {
@@ -35,13 +39,27 @@ const DashboardSatgas = () => {
         const provider = new ethers.BrowserProvider(window.ethereum);
         const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
 
+        // 1. Cek apakah wallet terhubung adalah Admin Kontrak
+        const adminAddress = await contract.admin();
+        const isUserAdmin = account.toLowerCase() === adminAddress.toLowerCase();
+        setIsAdmin(isUserAdmin);
+
+        // 2. Cek apakah wallet terhubung adalah Satgas PPKS
+        const isUserSatgas = await contract.isSatgas(account);
+
+        // Proteksi: Admin atau Satgas diizinkan masuk. Wallet lain dilempar ke /403
+        if (!isUserAdmin && !isUserSatgas) {
+          navigate('/403');
+          return;
+        }
+
+        // 3. Ambil total laporan dinamis dari blockchain
         const count = await contract.getReportCount();
         const fetchedList = [];
         let subCount = 0;
         let invCount = 0;
         let resCount = 0;
 
-        // Loop untuk mengambil data setiap laporan dari contract secara sekuensial
         for (let i = 1; i <= Number(count); i++) {
           const rawReport = await contract.reports(BigInt(i));
           if (rawReport.reporter !== ethers.ZeroAddress) {
@@ -73,17 +91,44 @@ const DashboardSatgas = () => {
           resolved: resCount
         });
       } catch (err) {
-        console.error("Gagal mengambil daftar laporan:", err);
-        setError(err.message || 'Gagal membaca data dari blockchain.');
+        console.error("Gagal mengambil data dashboard:", err);
+        setError(err.message || 'Gagal menyinkronkan data dengan blockchain.');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchReports();
-  }, [isSatgas, navigate]);
+    verifyRoleAndFetch();
+  }, [account, navigate]);
 
-  // Filter laporan berdasarkan pilihan tab
+  // Fungsi khusus Admin Kontrak untuk mengelola whitelist Satgas
+  const handleWhitelist = async (status) => {
+    if (!whitelistAddress.trim() || !ethers.isAddress(whitelistAddress)) {
+      alert("Masukkan alamat wallet Ethereum (0x...) yang valid!");
+      return;
+    }
+
+    setAdminUpdating(true);
+    try {
+      // Panggil transaksi menggunakan signer pelapor/admin
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+
+      const tx = await contract.whitelistSatgas(whitelistAddress.trim(), status);
+      await tx.wait();
+
+      alert(`Berhasil ${status ? 'menambahkan ke whitelist' : 'mencabut akses'} untuk wallet:\n${whitelistAddress}`);
+      setWhitelistAddress('');
+    } catch (err) {
+      console.error("Gagal memperbarui whitelist:", err);
+      alert("Gagal memperbarui whitelist: " + (err.reason || err.message));
+    } finally {
+      setAdminUpdating(false);
+    }
+  };
+
+  // Filter laporan berdasarkan pilihan tab status
   const filteredReports = reports.filter(r => {
     if (filterStatus === 'all') return true;
     return r.status.toString() === filterStatus;
@@ -93,7 +138,7 @@ const DashboardSatgas = () => {
     return (
       <div style={styles.loadingContainer}>
         <div style={styles.spinner}></div>
-        <p style={{ marginTop: '15px', color: '#ccc' }}>Mengambil daftar laporan dari blockchain...</p>
+        <p style={{ marginTop: '15px', color: '#ccc' }}>Memverifikasi hak akses & menyinkronkan data blockchain...</p>
       </div>
     );
   }
@@ -106,10 +151,48 @@ const DashboardSatgas = () => {
           <h1 style={{ margin: 0, fontSize: '38px' }}>Dashboard Satgas PPKS</h1>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <span style={{ color: '#888', fontSize: '13px' }}>WALLET SATGAS AKTIF</span>
+          <span style={{ color: '#888', fontSize: '12px', fontWeight: 'bold', letterSpacing: '0.5px' }}>
+            {isAdmin ? '🛡️ ADMIN KONTRAK AKTIF' : '💼 ANGGOTA SATGAS AKTIF'}
+          </span>
           <code style={styles.satgasBadge}>{account ? `${account.substring(0, 8)}...${account.substring(34)}` : '-'}</code>
         </div>
       </div>
+
+      {/* Panel Administrasi khusus Admin Kontrak */}
+      {isAdmin && (
+        <div style={styles.adminPanel}>
+          <h3 style={{ margin: '0 0 10px', color: '#FFFF2E', fontSize: '18px' }}>🛠️ Kelola Whitelist Satgas (Admin Kontrak)</h3>
+          <p style={{ color: '#aaa', fontSize: '13px', margin: '0 0 20px', lineHeight: '1.5' }}>
+            Sebagai pemilik/deployer kontrak ini, Anda dapat mendaftarkan dompet anggota baru ke dalam whitelist Satgas PPKS agar mereka dapat mengakses dashboard dan memperbarui status kasus.
+          </p>
+          <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+            <input 
+              type="text" 
+              placeholder="Masukkan alamat wallet Ethereum (0x...)" 
+              style={styles.adminInput}
+              value={whitelistAddress}
+              onChange={(e) => setWhitelistAddress(e.target.value)}
+              disabled={adminUpdating}
+            />
+            <button 
+              className="btn-pijar" 
+              style={{ ...styles.adminBtn, background: '#27AE60', color: '#fff', border: '1px solid #27AE60' }}
+              onClick={() => handleWhitelist(true)}
+              disabled={adminUpdating}
+            >
+              {adminUpdating ? 'Memproses...' : 'Tambah Whitelist'}
+            </button>
+            <button 
+              className="btn-pijar" 
+              style={{ ...styles.adminBtn, background: 'rgba(255,77,77,0.1)', color: '#ff4d4d', border: '1px solid rgba(255,77,77,0.3)' }}
+              onClick={() => handleWhitelist(false)}
+              disabled={adminUpdating}
+            >
+              {adminUpdating ? 'Memproses...' : 'Cabut Akses'}
+            </button>
+          </div>
+        </div>
+      )}
       
       {/* Grid Statistik */}
       <div style={styles.statsGrid}>
@@ -230,6 +313,32 @@ const DashboardSatgas = () => {
 };
 
 const styles = {
+  adminPanel: {
+    background: 'rgba(255, 255, 46, 0.02)',
+    border: '1px dashed rgba(255, 255, 46, 0.2)',
+    padding: '30px',
+    borderRadius: '20px',
+    marginBottom: '35px'
+  },
+  adminInput: {
+    flex: 1,
+    minWidth: '280px',
+    padding: '14px 18px',
+    background: '#040415',
+    color: '#fff',
+    border: '1px solid #222',
+    borderRadius: '12px',
+    fontSize: '14px',
+    outline: 'none',
+    boxSizing: 'border-box'
+  },
+  adminBtn: {
+    padding: '14px 28px',
+    borderRadius: '12px',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    fontSize: '14px'
+  },
   statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginBottom: '35px' },
   statCard: { 
     background: 'var(--card-bg)', 

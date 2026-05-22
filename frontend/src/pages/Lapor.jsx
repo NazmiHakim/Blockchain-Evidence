@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../context/WalletContext';
 import { ethers } from 'ethers';
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from '../contracts/config'; // Sesuaikan path jika berbeda
@@ -6,6 +7,7 @@ import { generateKey, encryptFile } from '../utils/encryption'; // Sesuaikan pat
 import { uploadToIPFS } from '../utils/ipfs'; // Sesuaikan path
 
 const Lapor = () => {
+  const navigate = useNavigate();
   // Mengambil state signer dari WalletContext
   const { signer } = useWallet();
 
@@ -75,6 +77,11 @@ const Lapor = () => {
       // Menunggu konfirmasi jaringan
       await tx.wait(); 
 
+      // Ambil ID Laporan yang baru saja didaftarkan (count terbaru)
+      const count = await contract.getReportCount();
+      const reportId = Number(count);
+      const txHash = tx.hash;
+
       alert("Laporan berhasil dikirim ke blockchain!");
       setStatus('success');
       
@@ -83,6 +90,9 @@ const Lapor = () => {
       setLokasi('');
       setKronologi('');
       setFile(null); 
+
+      // Alihkan pelapor ke halaman sukses dengan data riil
+      navigate('/success', { state: { reportId, txHash } });
       
     } catch (err) {
       console.error("Gagal mengirim laporan:", err);
