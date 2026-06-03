@@ -17,13 +17,9 @@ export const uploadToIPFS = async (filesArray) => {
 
         const formData = new FormData();
 
-        // ini logika bundling multi file yaitu pinata menggunakan struktur filepath khusus untuk membuat direktori/folder di ipfs
-        // lalu menambahkan awalan folder (misal: 'evidence_bundle/') dan pinata akan menggabungkan semua file ini dalam satu cid direktori.
-        const baseFolderName = `evidence_bundle_${Date.now()}`;
-
         filesArray.forEach((file) => {
-            // attach setiap file ke form data dan parameter ketiganya adalah nama file yang dimodifikasi dengan nama folder
-            formData.append("file", file, `${baseFolderName}/${file.name}`);
+            // GANTI baris formData.append menjadi seperti ini (tanpa nama folder):
+            formData.append("file", file);
         });
 
         // menambahkan metadata ini opsional, tapi berguna untuk pelacakan di dashboard pinata
@@ -71,5 +67,5 @@ export const uploadToIPFS = async (filesArray) => {
  */
 export const getIPFSGatewayUrl = (cid) => {
     // Sesuai dengan URL gateway yang dituliskan di dokumen PRD
-    return `https://gateway.pinata.cloud/ipfs/${cid}`;
+    return `https://ipfs.io/ipfs/${cid}`;
 };
