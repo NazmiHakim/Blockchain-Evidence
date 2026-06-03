@@ -1,5 +1,4 @@
 import axios from 'axios';
-import FormData from 'form-data';
 
 const PINATA_API_KEY = import.meta.env.VITE_PINATA_API_KEY;
 const PINATA_SECRET_API_KEY = import.meta.env.VITE_PINATA_SECRET_API_KEY;
