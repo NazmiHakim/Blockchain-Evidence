@@ -18,8 +18,8 @@ export const uploadToIPFS = async (filesArray) => {
         const formData = new FormData();
 
         filesArray.forEach((file) => {
-            // GANTI baris formData.append menjadi seperti ini (tanpa nama folder):
-            formData.append("file", file);
+            const fileName = file.name || `bukti_terenkripsi_${Date.now()}.bin`;
+            formData.append("file", file, fileName);
         });
 
         // menambahkan metadata ini opsional, tapi berguna untuk pelacakan di dashboard pinata

@@ -1,7 +1,7 @@
 const hre = require("hardhat");
 
 async function main() {
-  console.log("Memulai deployment ke jaringan Sepolia...");
+  console.log("Mulai deployment ke jaringan Sepolia");
 
   const EvidenceSystem = await hre.ethers.getContractFactory("EvidenceSystem");
   const contract = await EvidenceSystem.deploy();
@@ -9,7 +9,7 @@ async function main() {
   await contract.waitForDeployment();
   const address = await contract.getAddress();
 
-  console.log("🎉 Smart Contract sukses ditanam");
+  console.log("Smart Contract sukses ditanam");
   console.log("Alamat Contract:", address);
 
   // jeda 30 detik agar blok di jaringan sepolia selesai tercatat

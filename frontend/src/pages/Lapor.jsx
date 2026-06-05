@@ -65,7 +65,7 @@ const Lapor = () => {
       
       // 2. Upload ke Pinata / IPFS (Axios)
       // Mengunggah file bukti terenkripsi dan metadata terenkripsi dalam satu bundel folder
-      const cid = await uploadToIPFS([encryptedFile, encryptedMetadata]);
+      const cid = await uploadToIPFS([encryptedFile]);
       
       // 3. Kirim ke Smart Contract via ethers.js
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);

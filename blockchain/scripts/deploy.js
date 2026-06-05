@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 
 async function main() {
-  console.log("Mempersiapkan deployment kontrak EvidenceSystem...");
+  console.log("Persiapkan deployment kontrak EvidenceSystem");
 
   // mengambil kontrak yang sudah dicompile
   const EvidenceSystem = await hre.ethers.getContractFactory("EvidenceSystem");
@@ -13,7 +13,7 @@ async function main() {
   await evidenceSystem.waitForDeployment();
 
   const contractAddress = evidenceSystem.target;
-  console.log(`\nEvidenceSystem berhasil di-deploy ke alamat: ${contractAddress}`);
+  console.log(`\nEvidenceSystem berhasil dideploy ke alamat: ${contractAddress}`);
 
   // mengekstrak abi dan menyimpannya ke folder frontend
   const artifactsPath = path.join(__dirname, "../artifacts/contracts/EvidenceSystem.sol/EvidenceSystem.json");
