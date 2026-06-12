@@ -9,8 +9,8 @@ const ConnectWallet = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   const handleConnect = async () => {
-    // 3. Panggil fungsi connect dari context, lalu tutup modal
-    await connect();
+    // 3. Panggil fungsi connect dari context dengan forcePrompt = true
+    await connect(true);
     onClose(); 
   };
 

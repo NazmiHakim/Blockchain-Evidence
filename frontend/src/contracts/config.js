@@ -8,4 +8,6 @@ export const CONTRACT_ABI = [
   "function getReportCount() external view returns (uint256)",
   "function reports(uint256) external view returns (uint256 id, address reporter, string ipfsHash, string fileType, string encryptionKey, uint256 timestamp, uint8 status)",
   "function whitelistSatgas(address _member, bool _status) external",
-  "function updateStatus(uint256 _id, uint8 _status) external"];
+  "function updateStatus(uint256 _id, uint8 _status) external",
+  "function getMyReports() external view returns (uint256[] memory)"
+];

@@ -19,7 +19,8 @@ export const uploadToIPFS = async (filesArray) => {
 
         filesArray.forEach((file) => {
             const fileName = file.name || `bukti_terenkripsi_${Date.now()}.bin`;
-            formData.append("file", file, fileName);
+            // Trick Pinata into wrapping the files as a directory by prepending 'data/'
+            formData.append("file", file, `data/${fileName}`);
         });
 
         // menambahkan metadata ini opsional, tapi berguna untuk pelacakan di dashboard pinata
@@ -30,8 +31,8 @@ export const uploadToIPFS = async (filesArray) => {
 
         // opsi pinata: cid version 1 sangat disarankan untuk direktori
         const pinataOptions = JSON.stringify({
-            cidVersion: 1,
-            wrapWithDirectory: false // karena kita sudah pakai trik filepath di atas
+            cidVersion: 1
+            // wrapWithDirectory otomatis aktif ketika ada path (data/)
         });
         formData.append("pinataOptions", pinataOptions);
 

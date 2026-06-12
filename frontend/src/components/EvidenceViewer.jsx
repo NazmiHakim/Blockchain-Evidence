@@ -23,8 +23,8 @@ const EvidenceViewer = ({ ipfsHash, fileType, encryptionKey }) => {
       setError('');
 
       try {
-        // Gateway IPFS (Pinata)
-        const gatewayBaseUrl = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
+        // Gateway IPFS: Coba Pinata dulu, lalu fallback ke cloudflare/ipfs.io jika perlu
+        const gatewayBaseUrl = `https://ipfs.io/ipfs/${ipfsHash}`;
 
         // 1. Download & Dekripsi Metadata (Teks Kronologi)
         let metadataObj = null;
@@ -45,7 +45,10 @@ const EvidenceViewer = ({ ipfsHash, fileType, encryptionKey }) => {
           }
         } catch (metaErr) {
           console.error("Gagal mendownload/mendekripsi metadata:", metaErr);
-          throw new Error("Gagal mendekripsi kronologi kasus. Kunci enkripsi mungkin salah.");
+          if (metaErr.response) {
+            throw new Error(`Gagal mendownload dari IPFS (Status ${metaErr.response.status}). Mohon tunggu beberapa detik hingga IPFS menyinkronkan file Anda, lalu Refresh.`);
+          }
+          throw new Error("Gagal mendekripsi. Pastikan koneksi IPFS lancar dan kunci sesuai. Error: " + metaErr.message);
         }
 
         // 2. Download & Dekripsi File Bukti

@@ -1,30 +1,55 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../context/WalletContext';
 import { ethers } from 'ethers';
-import { CONTRACT_ADDRESS, CONTRACT_ABI } from '../contracts/config'; // Sesuaikan path jika berbeda
-import { generateKey, encryptFile } from '../utils/encryption'; // Sesuaikan path
-import { uploadToIPFS } from '../utils/ipfs'; // Sesuaikan path
+import { CONTRACT_ADDRESS, CONTRACT_ABI } from '../contracts/config';
+import { generateKey, encryptFile } from '../utils/encryption';
+import { uploadToIPFS } from '../utils/ipfs';
 
 const Lapor = () => {
   const navigate = useNavigate();
-  // Mengambil state signer dari WalletContext
-  const { signer } = useWallet();
+  const { account, signer } = useWallet();
+  const fileInputRef = useRef(null);
 
   // Local state untuk form
   const [tanggal, setTanggal] = useState('');
   const [lokasi, setLokasi] = useState('');
   const [kronologi, setKronologi] = useState('');
   const [file, setFile] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [termsAgreed, setTermsAgreed] = useState(false);
   const [status, setStatus] = useState('idle'); // 'idle' | 'loading' | 'success'
   const [error, setError] = useState('');
 
-  // Handle saat user memilih file
+  // Handle Drag and Drop
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      setFile(e.dataTransfer.files[0]);
+      setError('');
+    }
+  };
+
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
       setFile(e.target.files[0]);
-      setError(''); // Reset error kalau ada
+      setError('');
     }
+  };
+
+  const openFileDialog = () => {
+    fileInputRef.current.click();
   };
 
   const handleFormSubmit = async () => {
@@ -33,12 +58,16 @@ const Lapor = () => {
       setError("Hubungkan wallet MetaMask terlebih dahulu.");
       return;
     }
-    if (!tanggal || !lokasi || !kronologi) {
+    if (!tanggal || !lokasi || !kronologi.trim()) {
       setError("Semua field teks (tanggal, lokasi, kronologi) wajib diisi!");
       return;
     }
     if (!file) {
       setError("Pilih file bukti terlebih dahulu!");
+      return;
+    }
+    if (!termsAgreed) {
+      setError("Anda harus menyetujui persyaratan sebelum mensubmit laporan.");
       return;
     }
 
@@ -64,41 +93,32 @@ const Lapor = () => {
       const encryptedMetadata = await encryptFile(metadataFile, encryptionKey);
       
       // 2. Upload ke Pinata / IPFS (Axios)
-      // Mengunggah file bukti terenkripsi dan metadata terenkripsi dalam satu bundel folder
-      const cid = await uploadToIPFS([encryptedFile]);
+      const cid = await uploadToIPFS([encryptedMetadata, encryptedFile]);
       
       // 3. Kirim ke Smart Contract via ethers.js
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
       const fileType = file.type || 'application/octet-stream';
 
-      // Memanggil fungsi kontrak yang akan memicu popup MetaMask
       const tx = await contract.submitReport(cid, fileType, encryptionKey);
-      
-      // Menunggu konfirmasi jaringan
       await tx.wait(); 
 
-      // Ambil ID Laporan yang baru saja didaftarkan (count terbaru)
       const count = await contract.getReportCount();
       const reportId = Number(count);
       const txHash = tx.hash;
 
-      alert("Laporan berhasil dikirim ke blockchain!");
       setStatus('success');
       
-      // Reset form setelah sukses
       setTanggal('');
       setLokasi('');
       setKronologi('');
       setFile(null); 
+      setTermsAgreed(false);
 
-      // Alihkan pelapor ke halaman sukses dengan data riil
       navigate('/success', { state: { reportId, txHash } });
       
     } catch (err) {
       console.error("Gagal mengirim laporan:", err);
-      // Penanganan error sesuai instruksi dari panduan integration
       if (err.code === 4001) {
-        // Kode 4001 = user reject di MetaMask
         setError('Kamu membatalkan transaksi di MetaMask.');
       } else if (err.message?.includes('network')) {
         setError('Koneksi bermasalah. Cek internet dan coba lagi.');
@@ -109,9 +129,22 @@ const Lapor = () => {
     }
   };
 
+  if (!account) {
+    return (
+      <div style={{ padding: '120px 20px', textAlign: 'center', minHeight: '60vh' }}>
+        <div style={{ fontSize: '60px', marginBottom: '20px' }}>🦊</div>
+        <h2 style={{ fontSize: '32px', marginBottom: '15px' }}>Hubungkan Wallet Anda</h2>
+        <p style={{ color: '#aaa', fontSize: '16px', maxWidth: '500px', margin: '0 auto 30px', lineHeight: '1.6' }}>
+          Untuk memastikan anonimitas dan keamanan identitas Anda, laporan hanya dapat dibuat dan ditandatangani melalui Web3 Wallet (MetaMask). 
+          Silakan klik tombol <b>Connect Wallet</b> di menu atas untuk memulai.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding: '60px 120px' }}>
-      <p style={{ color: 'var(--royal-blue)', fontWeight: 'bold', fontSize: '14px' }}>FORMULIR AMAN</p>
+      <p style={{ color: 'var(--royal-blue)', fontWeight: 'bold', fontSize: '14px' }}>FORMULIR</p>
       <h1 style={{ fontSize: '40px', marginBottom: '40px' }}>Rekam Kejadian Anda</h1>
       
       <div style={styles.grid}>
@@ -148,20 +181,56 @@ const Lapor = () => {
             ></textarea>
           </div>
 
-          <div style={styles.uploadArea}>
-             <input 
-               type="file" 
-               onChange={handleFileChange}
-               style={{ marginBottom: '10px', color: '#fff' }}
-             />
-             <p style={{ margin: '10px 0 5px' }}>
-               {file ? `✅ ${file.name} terpilih` : '📤 Pilih file bukti dari perangkat Anda'}
-             </p>
-             <span style={{ color: '#555', fontSize: '12px' }}>Bukti Anda akan langsung dienkripsi sebelum masuk ke IPFS</span>
+          <div style={styles.inputGroup}>
+            <label style={styles.label}>Lampirkan Bukti (Foto/Video/Audio)</label>
+            <div 
+              style={{
+                ...styles.uploadArea,
+                borderColor: isDragging ? '#4D6CFA' : '#333',
+                background: isDragging ? 'rgba(77, 108, 250, 0.05)' : 'rgba(255,255,255,0.01)'
+              }}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={openFileDialog}
+            >
+              <input 
+                type="file" 
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                style={{ display: 'none' }}
+              />
+              <div style={styles.uploadIcon}>
+                {file ? '📄' : '📤'}
+              </div>
+              <p style={{ margin: '10px 0 5px', fontSize: '16px', fontWeight: 'bold' }}>
+                {file ? file.name : 'Seret & Lepas file ke sini, atau klik untuk memilih'}
+              </p>
+              <span style={{ color: '#888', fontSize: '13px' }}>
+                {file ? `Ukuran: ${(file.size / 1024 / 1024).toFixed(2)} MB` : 'Maks. 50MB (JPG, PNG, MP4, PDF)'}
+              </span>
+            </div>
+            <span style={{ display: 'block', marginTop: '10px', color: '#555', fontSize: '12px' }}>
+              *File bukti Anda akan dienkripsi secara lokal di browser sebelum diunggah ke IPFS.
+            </span>
           </div>
 
-          {/* Menampilkan pesan error jika ada */}
-          {error && <p style={{ color: '#ff4d4d', marginTop: '15px', fontSize: '14px' }}>❌ {error}</p>}
+          {/* Syarat dan Ketentuan Validation */}
+          <div style={styles.checkboxGroup}>
+            <input 
+              type="checkbox" 
+              id="terms" 
+              checked={termsAgreed}
+              onChange={(e) => setTermsAgreed(e.target.checked)}
+              style={styles.checkbox}
+            />
+            <label htmlFor="terms" style={styles.checkboxLabel}>
+              Saya menyatakan bahwa laporan dan bukti yang dilampirkan adalah benar adanya, 
+              dan saya setuju untuk membayar biaya transaksi Ethereum (Gas Fee) untuk menyimpan data ini secara permanen.
+            </label>
+          </div>
+
+          {error && <p style={{ color: '#ff4d4d', marginTop: '15px', fontSize: '14px', fontWeight: 'bold' }}>❌ {error}</p>}
 
           <button 
             className="btn-pijar" 
@@ -178,8 +247,9 @@ const Lapor = () => {
             <h4 style={{ color: '#FFFF2E' }}>🛡️ Jaminan Sistem PIJAR</h4>
             <ul style={{ color: '#ccc', fontSize: '14px', lineHeight: '2' }}>
               <li>Identitas Anda tidak tersimpan di server manapun.</li>
-              <li>Bukti fisik tidak dapat dimanipulasi oleh pihak lain.</li>
-              <li>Laporan terverifikasi oleh jaringan Ethereum Sepolia.</li>
+              <li>Bukti fisik dienkripsi dengan standar militer AES-GCM.</li>
+              <li>Hanya Anda dan Satgas yang memiliki akses ke bukti tersebut.</li>
+              <li>Laporan terverifikasi oleh jaringan desentralisasi blockchain.</li>
             </ul>
           </div>
         </div>
@@ -196,7 +266,7 @@ const styles = {
     borderRadius: '24px', 
     border: '1px solid var(--border-white)' 
   },
-  label: { display: 'block', marginBottom: '10px', fontSize: '14px', color: '#aaa' },
+  label: { display: 'block', marginBottom: '10px', fontSize: '14px', color: '#aaa', fontWeight: 'bold' },
   input: { 
     width: '100%', 
     padding: '15px', 
@@ -208,17 +278,44 @@ const styles = {
     boxSizing: 'border-box'
   },
   inputGroup: {
-    marginBottom: '20px'
+    marginBottom: '15px'
   },
   uploadArea: {
-    border: '2px dashed #333',
-    padding: '40px',
+    border: '2px dashed',
+    padding: '40px 20px',
     textAlign: 'center',
     borderRadius: '16px',
-    background: 'rgba(255,255,255,0.01)',
     display: 'flex',
     flexDirection: 'column',
-    alignItems: 'center'
+    alignItems: 'center',
+    cursor: 'pointer',
+    transition: 'all 0.3s ease'
+  },
+  uploadIcon: {
+    fontSize: '40px',
+    marginBottom: '10px'
+  },
+  checkboxGroup: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '12px',
+    marginTop: '25px',
+    background: 'rgba(255,255,255,0.02)',
+    padding: '15px',
+    borderRadius: '10px',
+    border: '1px solid rgba(255,255,255,0.05)'
+  },
+  checkbox: {
+    marginTop: '4px',
+    width: '18px',
+    height: '18px',
+    cursor: 'pointer'
+  },
+  checkboxLabel: {
+    fontSize: '13px',
+    color: '#aaa',
+    lineHeight: '1.5',
+    cursor: 'pointer'
   },
   pijarBox: {
     background: 'rgba(77, 108, 250, 0.05)',

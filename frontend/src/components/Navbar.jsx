@@ -7,9 +7,10 @@ import { useWallet } from '../context/WalletContext';
 const Navbar = () => {
   const location = useLocation();
   const [isModalOpen, setModalOpen] = useState(false);
+  const [isDropdownOpen, setDropdownOpen] = useState(false);
   
-  // 2. Ambil account dari context
-  const { account } = useWallet(); 
+  // 2. Ambil account, role, dan disconnect dari context
+  const { account, isSatgas, isAdmin, disconnect } = useWallet(); 
 
   const navLinkStyle = (path) => ({
     color: location.pathname === path ? '#FFFF2E' : '#888',
@@ -33,14 +34,36 @@ const Navbar = () => {
           <Link to="/" style={navLinkStyle('/')}>Beranda</Link>
           <Link to="/lapor" style={navLinkStyle('/lapor')}>Laporkan</Link>
           <Link to="/status" style={navLinkStyle('/status')}>Status Laporan</Link>
-          <Link to="/satgas" style={navLinkStyle('/satgas')}>Satgas</Link>
+          {isSatgas && (
+            <Link to="/satgas" style={navLinkStyle('/satgas')}>Satgas</Link>
+          )}
         </div>
         
         {/* 3. Conditional rendering: tampilkan address jika ada, tombol Connect jika tidak */}
         {account ? (
-          <button className="btn-pijar" style={styles.connectedBtn}>
-            {formatAddress(account)}
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button 
+              className="btn-pijar" 
+              style={styles.connectedBtn}
+              onClick={() => setDropdownOpen(!isDropdownOpen)}
+            >
+              🔑 {formatAddress(account)}
+            </button>
+            
+            {isDropdownOpen && (
+              <div style={styles.dropdown}>
+                <button 
+                  style={styles.logoutBtn} 
+                  onClick={() => {
+                    disconnect();
+                    setDropdownOpen(false);
+                  }}
+                >
+                  🚪 Logout
+                </button>
+              </div>
+            )}
+          </div>
         ) : (
           <button className="btn-pijar" onClick={() => setModalOpen(true)}>
             Connect Wallet
@@ -69,10 +92,40 @@ const styles = {
   menu: { display: 'flex', gap: '40px' },
   // Tambahan style opsional agar tombol beda warna kalau sudah connect
   connectedBtn: {
-    backgroundColor: 'transparent',
-    border: '1px solid #FFFF2E',
+    backgroundColor: 'rgba(255, 255, 46, 0.1)',
+    border: '1px solid rgba(255, 255, 46, 0.5)',
     color: '#FFFF2E',
-    cursor: 'default'
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px'
+  },
+  dropdown: {
+    position: 'absolute',
+    top: 'calc(100% + 10px)',
+    right: 0,
+    background: 'rgba(10, 10, 25, 0.95)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '12px',
+    padding: '10px',
+    boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+    minWidth: '150px',
+    backdropFilter: 'blur(10px)',
+    zIndex: 1001
+  },
+  logoutBtn: {
+    width: '100%',
+    padding: '10px 15px',
+    background: 'rgba(255,77,77,0.1)',
+    color: '#ff4d4d',
+    border: '1px solid rgba(255,77,77,0.2)',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontWeight: 'bold',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    transition: 'all 0.2s'
   }
 };
 
