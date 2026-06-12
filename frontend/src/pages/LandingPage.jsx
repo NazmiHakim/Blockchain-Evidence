@@ -1,8 +1,10 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useWallet } from '../context/WalletContext';
 
 const LandingPage = () => {
   const navigate = useNavigate();
+  const { isSatgas } = useWallet();
 
   return (
     <div style={styles.container}>
@@ -42,10 +44,12 @@ const LandingPage = () => {
           <h3>Siap untuk mengamankan kesaksian Anda?</h3>
           <button className="btn-pijar" onClick={() => navigate('/lapor')}>Mulai Laporan Sekarang</button>
         </div>
-        <div style={styles.satgasLogin}>
-            <p>Anggota Satgas PPKS?</p>
-            <button style={styles.blueBtn} onClick={() => navigate('/satgas')}>Masuk ke Dashboard</button>
-        </div>
+        {isSatgas && (
+          <div style={styles.satgasLogin}>
+              <p>Anda login sebagai Satgas</p>
+              <button style={styles.blueBtn} onClick={() => navigate('/satgas')}>Masuk ke Dashboard</button>
+          </div>
+        )}
       </section>
     </div>
   );
