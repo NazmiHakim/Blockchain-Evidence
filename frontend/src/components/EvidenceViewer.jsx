@@ -23,17 +23,37 @@ const EvidenceViewer = ({ ipfsHash, fileType, encryptionKey }) => {
       setError('');
 
       try {
-        // Gateway IPFS: Coba Pinata dulu, lalu fallback ke cloudflare/ipfs.io jika perlu
-        const gatewayBaseUrl = `https://ipfs.io/ipfs/${ipfsHash}`;
+        // Daftar Gateway IPFS untuk Fallback (Meningkatkan keandalan)
+        const gateways = [
+          `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
+          `https://ipfs.io/ipfs/${ipfsHash}`,
+          `https://dweb.link/ipfs/${ipfsHash}`,
+          `https://cloudflare-ipfs.com/ipfs/${ipfsHash}`
+        ];
 
-        // 1. Download & Dekripsi Metadata (Teks Kronologi)
+        let metadataRes = null;
+        let activeGateway = null;
+
+        // 1. Download & Dekripsi Metadata dengan Fallback Gateway
+        for (const gateway of gateways) {
+          try {
+            metadataRes = await axios.get(`${gateway}/metadata.json.enc`, {
+              responseType: 'arraybuffer',
+              timeout: 15000 // 15 detik per gateway
+            });
+            activeGateway = gateway; // Simpan gateway yang berhasil
+            break; // Keluar dari loop jika berhasil
+          } catch (err) {
+            console.warn(`Gateway ${gateway} gagal atau timeout, mencoba gateway berikutnya...`);
+          }
+        }
+
+        if (!metadataRes) {
+          throw new Error("Gagal mendownload dari semua IPFS Gateway. Mohon tunggu beberapa detik hingga IPFS menyinkronkan file Anda, lalu Refresh.");
+        }
+
         let metadataObj = null;
         try {
-          const metadataRes = await axios.get(`${gatewayBaseUrl}/metadata.json.enc`, {
-            responseType: 'arraybuffer',
-            timeout: 10000 // 10s timeout
-          });
-
           const decryptedMetadataBuffer = await decryptFile(metadataRes.data, encryptionKey);
           const decoder = new TextDecoder('utf-8');
           const metadataText = decoder.decode(decryptedMetadataBuffer);
@@ -44,19 +64,16 @@ const EvidenceViewer = ({ ipfsHash, fileType, encryptionKey }) => {
             setEvidenceName(metadataObj.fileName);
           }
         } catch (metaErr) {
-          console.error("Gagal mendownload/mendekripsi metadata:", metaErr);
-          if (metaErr.response) {
-            throw new Error(`Gagal mendownload dari IPFS (Status ${metaErr.response.status}). Mohon tunggu beberapa detik hingga IPFS menyinkronkan file Anda, lalu Refresh.`);
-          }
-          throw new Error("Gagal mendekripsi. Pastikan koneksi IPFS lancar dan kunci sesuai. Error: " + metaErr.message);
+          console.error("Gagal mendekripsi metadata:", metaErr);
+          throw new Error("Gagal mendekripsi. Pastikan kunci enkripsi sesuai. Error: " + metaErr.message);
         }
 
-        // 2. Download & Dekripsi File Bukti
-        if (metadataObj && metadataObj.fileName) {
+        // 2. Download & Dekripsi File Bukti menggunakan Active Gateway yang sudah terbukti cepat
+        if (metadataObj && metadataObj.fileName && activeGateway) {
           try {
-            const fileRes = await axios.get(`${gatewayBaseUrl}/${metadataObj.fileName}.enc`, {
+            const fileRes = await axios.get(`${activeGateway}/${metadataObj.fileName}.enc`, {
               responseType: 'arraybuffer',
-              timeout: 20000 // 20s timeout untuk file bukti yang mungkin besar
+              timeout: 45000 // 45s timeout untuk file bukti yang mungkin besar
             });
 
             const decryptedFileBuffer = await decryptFile(fileRes.data, encryptionKey);
