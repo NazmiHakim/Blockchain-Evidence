@@ -71,7 +71,8 @@ const EvidenceViewer = ({ ipfsHash, fileType, encryptionKey }) => {
         // 2. Download & Dekripsi File Bukti menggunakan Active Gateway yang sudah terbukti cepat
         if (metadataObj && metadataObj.fileName && activeGateway) {
           try {
-            const fileRes = await axios.get(`${activeGateway}/${metadataObj.fileName}.enc`, {
+            const fileNameEncoded = encodeURIComponent(`${metadataObj.fileName}.enc`);
+            const fileRes = await axios.get(`${activeGateway}/${fileNameEncoded}`, {
               responseType: 'arraybuffer',
               timeout: 45000 // 45s timeout untuk file bukti yang mungkin besar
             });
@@ -85,7 +86,7 @@ const EvidenceViewer = ({ ipfsHash, fileType, encryptionKey }) => {
             }
           } catch (fileErr) {
             console.error("Gagal mendownload/mendekripsi file bukti:", fileErr);
-            throw new Error("Gagal mendekripsi file bukti pendukung.");
+            throw new Error(`Gagal mendekripsi file bukti pendukung. Detail: ${fileErr.message || String(fileErr)}`);
           }
         }
 
