@@ -23,55 +23,54 @@ const EvidenceViewer = ({ ipfsHash, fileType, encryptionKey }) => {
       setError('');
 
       try {
-        // ── Helper: Coba download file dari berbagai gateway & path ──
+        // Gateway IPFS dengan prioritas:
+        // 1. Vite Proxy → Pinata Gateway (bypass CORS, instan untuk file yang di-pin)
+        // 2. ipfs.io (fallback publik, lambat tapi andal)
+        // 3. dweb.link (fallback tambahan)
         const gateways = [
-          `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
-          `https://ipfs.io/ipfs/${ipfsHash}`,
-          `https://dweb.link/ipfs/${ipfsHash}`,
-          `https://cloudflare-ipfs.com/ipfs/${ipfsHash}`
+          `/ipfs/${ipfsHash}`,                                      // Vite proxy → Pinata
+          `https://ipfs.io/ipfs/${ipfsHash}`,                       // Publik
+          `https://dweb.link/ipfs/${ipfsHash}`,                     // Publik
         ];
 
-        const tryDownload = async (fileName, timeout = 20000) => {
-          // Coba 2 pola path: langsung di root CID, atau di dalam subfolder data/
-          const pathVariants = [fileName, `data/${fileName}`];
-
+        const tryDownload = async (fileName, timeout = 30000) => {
           for (const gateway of gateways) {
-            for (const path of pathVariants) {
-              const url = `${gateway}/${encodeURIComponent(path).replace(/%2F/g, '/')}`;
-              try {
-                console.log(`[IPFS] Mencoba: ${url}`);
-                const res = await axios.get(url, {
-                  responseType: 'arraybuffer',
-                  timeout
-                });
+            const url = `${gateway}/${encodeURIComponent(fileName)}`;
+            try {
+              console.log(`[IPFS] Mencoba: ${url}`);
+              const res = await axios.get(url, {
+                responseType: 'arraybuffer',
+                timeout
+              });
 
-                // Validasi: respons harus > 12 byte (ukuran IV AES-GCM)
-                if (res.data && res.data.byteLength > 12) {
-                  // Cek bukan HTML (gateway kadang kembalikan halaman error 200)
-                  const firstBytes = new Uint8Array(res.data, 0, Math.min(20, res.data.byteLength));
-                  const textSnippet = String.fromCharCode(...firstBytes);
-                  if (textSnippet.startsWith('<!') || textSnippet.startsWith('<html')) {
-                    console.warn(`[IPFS] ${url} mengembalikan HTML, bukan data biner. Skip.`);
-                    continue;
-                  }
-                  console.log(`[IPFS] ✅ Berhasil download dari: ${url} (${res.data.byteLength} bytes)`);
-                  return res;
-                } else {
-                  console.warn(`[IPFS] ${url} respons terlalu kecil (${res.data?.byteLength || 0} bytes). Skip.`);
-                }
-              } catch (err) {
-                console.warn(`[IPFS] ${url} gagal: ${err.message}`);
+              // Validasi: respons harus > 12 byte (ukuran minimum IV AES-GCM)
+              if (!res.data || res.data.byteLength <= 12) {
+                console.warn(`[IPFS] ${url} respons terlalu kecil (${res.data?.byteLength || 0} bytes). Skip.`);
+                continue;
               }
+
+              // Cek bukan HTML (beberapa gateway mengembalikan halaman error dengan status 200)
+              const firstBytes = new Uint8Array(res.data, 0, Math.min(20, res.data.byteLength));
+              const textSnippet = String.fromCharCode(...firstBytes);
+              if (textSnippet.startsWith('<!') || textSnippet.startsWith('<html')) {
+                console.warn(`[IPFS] ${url} mengembalikan HTML, bukan data biner. Skip.`);
+                continue;
+              }
+
+              console.log(`[IPFS] ✅ Berhasil: ${url} (${res.data.byteLength} bytes)`);
+              return res;
+            } catch (err) {
+              console.warn(`[IPFS] ${url} gagal: ${err.message}`);
             }
           }
-          return null; // Semua kombinasi gagal
+          return null;
         };
 
         // ── 1. Download & Dekripsi Metadata ──
-        const metadataRes = await tryDownload('metadata.json.enc', 15000);
+        const metadataRes = await tryDownload('metadata.json.enc', 20000);
 
         if (!metadataRes) {
-          throw new Error("Gagal mendownload metadata dari semua IPFS Gateway. File mungkin belum tersebar di jaringan IPFS. Tunggu 30 detik lalu Refresh halaman ini.");
+          throw new Error("Gagal mendownload metadata dari semua IPFS Gateway. File mungkin belum tersebar di jaringan. Tunggu 30 detik lalu Refresh.");
         }
 
         let metadataObj = null;
@@ -99,7 +98,7 @@ const EvidenceViewer = ({ ipfsHash, fileType, encryptionKey }) => {
           const fileRes = await tryDownload(evidenceFileName, 60000);
 
           if (!fileRes) {
-            throw new Error(`Gagal mendownload file bukti "${metadataObj.fileName}" dari semua IPFS Gateway. File mungkin belum tersebar. Tunggu 30 detik lalu Refresh.`);
+            throw new Error(`Gagal mendownload file bukti "${metadataObj.fileName}" dari semua IPFS Gateway. Tunggu 30 detik lalu Refresh.`);
           }
 
           try {
@@ -113,9 +112,9 @@ const EvidenceViewer = ({ ipfsHash, fileType, encryptionKey }) => {
             }
           } catch (decryptErr) {
             console.error("[IPFS] ❌ Gagal mendekripsi file bukti:", decryptErr);
-            console.error("[IPFS] Ukuran data terenkripsi:", fileRes.data.byteLength, "bytes");
+            console.error("[IPFS] Ukuran data:", fileRes.data.byteLength, "bytes");
             console.error("[IPFS] 20 byte pertama:", Array.from(new Uint8Array(fileRes.data, 0, 20)));
-            throw new Error(`Gagal mendekripsi file bukti. Data mungkin corrupt. Ukuran: ${fileRes.data.byteLength} bytes. Detail: ${decryptErr.message}`);
+            throw new Error(`Gagal mendekripsi file bukti. Data mungkin corrupt (${fileRes.data.byteLength} bytes). Detail: ${decryptErr.message}`);
           }
         }
 
