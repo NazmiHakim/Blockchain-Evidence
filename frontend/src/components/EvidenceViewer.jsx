@@ -6,8 +6,8 @@ const EvidenceViewer = ({ ipfsHash, fileType, encryptionKey }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [metadata, setMetadata] = useState(null);
-  const [evidenceUrl, setEvidenceUrl] = useState('');
-  const [evidenceName, setEvidenceName] = useState('');
+  // Support multi-file: array of { url, name, type }
+  const [evidenceFiles, setEvidenceFiles] = useState([]);
 
   useEffect(() => {
     let active = true;
@@ -101,38 +101,56 @@ const EvidenceViewer = ({ ipfsHash, fileType, encryptionKey }) => {
           
           if (active) {
             setMetadata(metadataObj);
-            setEvidenceName(metadataObj.fileName);
           }
         } catch (metaErr) {
           console.error("[IPFS] ❌ Gagal mendekripsi metadata:", metaErr);
           throw new Error("Gagal mendekripsi kronologi kasus. Kunci enkripsi mungkin salah. Detail: " + metaErr.message);
         }
 
-        // ── 2. Download & Dekripsi File Bukti ──
-        if (metadataObj && metadataObj.fileName) {
-          const evidenceFileName = `${metadataObj.fileName}.enc`;
-          console.log(`[IPFS] Mencari file bukti: ${evidenceFileName}`);
+        // ── 2. Download & Dekripsi File Bukti (multi-file support) ──
+        // Backward compatible: gunakan fileNames[] jika ada, fallback ke fileName tunggal
+        const fileNames = metadataObj.fileNames || (metadataObj.fileName ? [metadataObj.fileName] : []);
+        
+        if (fileNames.length > 0) {
+          const decryptedResults = [];
 
-          const fileRes = await tryDownload(evidenceFileName, 60000);
+          for (const name of fileNames) {
+            const encFileName = `${name}.enc`;
+            console.log(`[IPFS] Mencari file bukti: ${encFileName}`);
 
-          if (!fileRes) {
-            throw new Error(`Gagal mendownload file bukti "${metadataObj.fileName}" dari semua IPFS Gateway. Tunggu 30 detik lalu Refresh.`);
+            const fileRes = await tryDownload(encFileName, 60000);
+
+            if (!fileRes) {
+              console.warn(`[IPFS] ⚠️ Gagal mendownload "${name}", lanjut ke file berikutnya.`);
+              decryptedResults.push({ name, url: null, error: true });
+              continue;
+            }
+
+            try {
+              const decryptedFileBuffer = await decryptFile(fileRes.data, encryptionKey);
+              // Deteksi tipe berdasarkan ekstensi file
+              const ext = name.split('.').pop().toLowerCase();
+              const mimeMap = {
+                jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp',
+                mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime',
+                mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg',
+                pdf: 'application/pdf'
+              };
+              const detectedType = mimeMap[ext] || fileType || 'application/octet-stream';
+
+              const decryptedBlob = new Blob([decryptedFileBuffer], { type: detectedType });
+              const blobUrl = URL.createObjectURL(decryptedBlob);
+              console.log(`[IPFS] ✅ File bukti terdekripsi: "${name}" (${decryptedFileBuffer.byteLength} bytes)`);
+
+              decryptedResults.push({ name, url: blobUrl, type: detectedType, error: false });
+            } catch (decryptErr) {
+              console.error(`[IPFS] ❌ Gagal mendekripsi "${name}":`, decryptErr);
+              decryptedResults.push({ name, url: null, error: true });
+            }
           }
 
-          try {
-            const decryptedFileBuffer = await decryptFile(fileRes.data, encryptionKey);
-            const decryptedBlob = new Blob([decryptedFileBuffer], { type: fileType || 'application/octet-stream' });
-            const blobUrl = URL.createObjectURL(decryptedBlob);
-            console.log(`[IPFS] ✅ File bukti terdekripsi (${decryptedFileBuffer.byteLength} bytes)`);
-
-            if (active) {
-              setEvidenceUrl(blobUrl);
-            }
-          } catch (decryptErr) {
-            console.error("[IPFS] ❌ Gagal mendekripsi file bukti:", decryptErr);
-            console.error("[IPFS] Ukuran data:", fileRes.data.byteLength, "bytes");
-            console.error("[IPFS] 20 byte pertama:", Array.from(new Uint8Array(fileRes.data, 0, 20)));
-            throw new Error(`Gagal mendekripsi file bukti. Data mungkin corrupt (${fileRes.data.byteLength} bytes). Detail: ${decryptErr.message}`);
+          if (active) {
+            setEvidenceFiles(decryptedResults);
           }
         }
 
@@ -149,10 +167,10 @@ const EvidenceViewer = ({ ipfsHash, fileType, encryptionKey }) => {
 
     return () => {
       active = false;
-      // Cleanup object URL untuk mencegah kebocoran memori
-      if (evidenceUrl) {
-        URL.revokeObjectURL(evidenceUrl);
-      }
+      // Cleanup object URLs untuk mencegah kebocoran memori
+      evidenceFiles.forEach(f => {
+        if (f.url) URL.revokeObjectURL(f.url);
+      });
     };
   }, [ipfsHash, fileType, encryptionKey]);
 
@@ -174,18 +192,25 @@ const EvidenceViewer = ({ ipfsHash, fileType, encryptionKey }) => {
     );
   }
 
-  // Helper untuk merender file bukti berdasarkan tipenya
-  const renderEvidence = () => {
-    if (!evidenceUrl) return null;
+  // Helper untuk merender satu file bukti berdasarkan tipenya
+  const renderSingleEvidence = (file, index) => {
+    if (file.error || !file.url) {
+      return (
+        <div key={index} style={styles.errorFileItem}>
+          <span>⚠️</span>
+          <span style={{ color: '#ff4d4d', fontSize: '14px' }}>Gagal memuat: {file.name}</span>
+        </div>
+      );
+    }
 
-    const lowerType = (fileType || '').toLowerCase();
+    const lowerType = (file.type || '').toLowerCase();
 
     if (lowerType.startsWith('image/')) {
       return (
-        <div style={styles.mediaWrapper}>
-          <img src={evidenceUrl} alt="Bukti Kasus" style={styles.image} />
-          <p style={styles.fileNameText}>📄 {evidenceName}</p>
-          <a href={evidenceUrl} download={evidenceName} className="btn-pijar" style={styles.downloadBtn}>
+        <div key={index} style={styles.mediaWrapper}>
+          <img src={file.url} alt={`Bukti ${index + 1}`} style={styles.image} />
+          <p style={styles.fileNameText}>📄 {file.name}</p>
+          <a href={file.url} download={file.name} className="btn-pijar" style={styles.downloadBtn}>
             Unduh Gambar Asli
           </a>
         </div>
@@ -194,10 +219,10 @@ const EvidenceViewer = ({ ipfsHash, fileType, encryptionKey }) => {
 
     if (lowerType.startsWith('video/')) {
       return (
-        <div style={styles.mediaWrapper}>
-          <video src={evidenceUrl} controls style={styles.video} />
-          <p style={styles.fileNameText}>🎥 {evidenceName}</p>
-          <a href={evidenceUrl} download={evidenceName} className="btn-pijar" style={styles.downloadBtn}>
+        <div key={index} style={styles.mediaWrapper}>
+          <video src={file.url} controls style={styles.video} />
+          <p style={styles.fileNameText}>🎥 {file.name}</p>
+          <a href={file.url} download={file.name} className="btn-pijar" style={styles.downloadBtn}>
             Unduh Video Asli
           </a>
         </div>
@@ -206,10 +231,10 @@ const EvidenceViewer = ({ ipfsHash, fileType, encryptionKey }) => {
 
     if (lowerType.startsWith('audio/')) {
       return (
-        <div style={styles.mediaWrapper}>
-          <audio src={evidenceUrl} controls style={styles.audio} />
-          <p style={styles.fileNameText}>🎵 {evidenceName}</p>
-          <a href={evidenceUrl} download={evidenceName} className="btn-pijar" style={styles.downloadBtn}>
+        <div key={index} style={styles.mediaWrapper}>
+          <audio src={file.url} controls style={styles.audio} />
+          <p style={styles.fileNameText}>🎵 {file.name}</p>
+          <a href={file.url} download={file.name} className="btn-pijar" style={styles.downloadBtn}>
             Unduh Audio Asli
           </a>
         </div>
@@ -218,11 +243,11 @@ const EvidenceViewer = ({ ipfsHash, fileType, encryptionKey }) => {
 
     // Default untuk dokumen (PDF, Word, dll)
     return (
-      <div style={styles.docWrapper}>
+      <div key={index} style={styles.docWrapper}>
         <div style={styles.docIcon}>📄</div>
         <h4 style={{ margin: '10px 0' }}>Dokumen Bukti</h4>
-        <p style={{ color: '#888', fontSize: '14px', marginBottom: '20px' }}>{evidenceName}</p>
-        <a href={evidenceUrl} download={evidenceName} className="btn-pijar" style={{ padding: '12px 30px' }}>
+        <p style={{ color: '#888', fontSize: '14px', marginBottom: '20px' }}>{file.name}</p>
+        <a href={file.url} download={file.name} className="btn-pijar" style={{ padding: '12px 30px' }}>
           Unduh & Buka Dokumen
         </a>
       </div>
@@ -260,9 +285,13 @@ const EvidenceViewer = ({ ipfsHash, fileType, encryptionKey }) => {
 
       <div style={styles.evidenceSection}>
         <h2 style={{ color: '#FFFF2E', fontSize: '22px', borderBottom: '1px solid #333', paddingBottom: '10px', marginTop: 0 }}>
-          📁 File Bukti Fisik (Terdekripsi)
+          📁 File Bukti Fisik (Terdekripsi) — {evidenceFiles.length} file
         </h2>
-        {renderEvidence()}
+        {evidenceFiles.length === 0 ? (
+          <p style={{ color: '#888', textAlign: 'center', padding: '20px' }}>Tidak ada file bukti terlampir.</p>
+        ) : (
+          evidenceFiles.map((file, idx) => renderSingleEvidence(file, idx))
+        )}
       </div>
     </div>
   );
@@ -366,6 +395,16 @@ const styles = {
     padding: '10px 25px',
     fontSize: '13px',
     textDecoration: 'none'
+  },
+  errorFileItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '12px 16px',
+    background: 'rgba(255,77,77,0.05)',
+    border: '1px solid rgba(255,77,77,0.15)',
+    borderRadius: '8px',
+    marginTop: '10px'
   },
   loadingContainer: {
     textAlign: 'center',

@@ -15,7 +15,7 @@ const Lapor = () => {
   const [tanggal, setTanggal] = useState('');
   const [lokasi, setLokasi] = useState('');
   const [kronologi, setKronologi] = useState('');
-  const [file, setFile] = useState(null);
+  const [files, setFiles] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
   const [termsAgreed, setTermsAgreed] = useState(false);
   const [status, setStatus] = useState('idle'); // 'idle' | 'loading' | 'success'
@@ -36,16 +36,24 @@ const Lapor = () => {
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      setFile(e.dataTransfer.files[0]);
+      const newFiles = Array.from(e.dataTransfer.files);
+      setFiles(prev => [...prev, ...newFiles]);
       setError('');
     }
   };
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
-      setFile(e.target.files[0]);
+      const newFiles = Array.from(e.target.files);
+      setFiles(prev => [...prev, ...newFiles]);
       setError('');
+      // Reset input agar file yang sama bisa dipilih lagi
+      e.target.value = '';
     }
+  };
+
+  const removeFile = (indexToRemove) => {
+    setFiles(prev => prev.filter((_, i) => i !== indexToRemove));
   };
 
   const openFileDialog = () => {
@@ -62,8 +70,8 @@ const Lapor = () => {
       setError("Semua field teks (tanggal, lokasi, kronologi) wajib diisi!");
       return;
     }
-    if (!file) {
-      setError("Pilih file bukti terlebih dahulu!");
+    if (files.length === 0) {
+      setError("Pilih minimal satu file bukti!");
       return;
     }
     if (!termsAgreed) {
@@ -78,26 +86,33 @@ const Lapor = () => {
       // 1. Generate Kunci & Enkripsi (Web Crypto API)
       const encryptionKey = await generateKey();
       
-      // Enkripsi file bukti
-      const encryptedFile = await encryptFile(file, encryptionKey);
+      // Enkripsi semua file bukti
+      const encryptedFiles = [];
+      for (const f of files) {
+        const encrypted = await encryptFile(f, encryptionKey);
+        encryptedFiles.push(encrypted);
+      }
       
-      // Enkripsi file teks metadata (tanggal, lokasi, kronologi)
+      // Enkripsi file teks metadata (tanggal, lokasi, kronologi, daftar file)
       const metadata = {
         tanggal,
         lokasi,
         kronologi,
-        fileName: file.name
+        // Backward compatible: fileName untuk file pertama, fileNames untuk semua
+        fileName: files[0].name,
+        fileNames: files.map(f => f.name)
       };
       const metadataJson = JSON.stringify(metadata, null, 2);
       const metadataFile = new File([metadataJson], 'metadata.json', { type: 'application/json' });
       const encryptedMetadata = await encryptFile(metadataFile, encryptionKey);
       
-      // 2. Upload ke Pinata / IPFS (Axios)
-      const cid = await uploadToIPFS([encryptedMetadata, encryptedFile]);
+      // 2. Upload ke Pinata / IPFS (Axios) — semua file dibundel dalam 1 CID
+      const cid = await uploadToIPFS([encryptedMetadata, ...encryptedFiles]);
       
       // 3. Kirim ke Smart Contract via ethers.js
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
-      const fileType = file.type || 'application/octet-stream';
+      // Simpan tipe file pertama (untuk backward compat); viewer akan mendeteksi tipe per file
+      const fileType = files[0].type || 'application/octet-stream';
 
       const tx = await contract.submitReport(cid, fileType, encryptionKey);
       await tx.wait(); 
@@ -111,7 +126,7 @@ const Lapor = () => {
       setTanggal('');
       setLokasi('');
       setKronologi('');
-      setFile(null); 
+      setFiles([]);
       setTermsAgreed(false);
 
       navigate('/success', { state: { reportId, txHash } });
@@ -182,7 +197,7 @@ const Lapor = () => {
           </div>
 
           <div style={styles.inputGroup}>
-            <label style={styles.label}>Lampirkan Bukti (Foto/Video/Audio)</label>
+            <label style={styles.label}>Lampirkan Bukti (Foto/Video/Audio) — bisa lebih dari 1 file</label>
             <div 
               style={{
                 ...styles.uploadArea,
@@ -198,20 +213,46 @@ const Lapor = () => {
                 type="file" 
                 ref={fileInputRef}
                 onChange={handleFileChange}
+                multiple
                 style={{ display: 'none' }}
               />
-              <div style={styles.uploadIcon}>
-                {file ? '📄' : '📤'}
-              </div>
+              <div style={styles.uploadIcon}>📤</div>
               <p style={{ margin: '10px 0 5px', fontSize: '16px', fontWeight: 'bold' }}>
-                {file ? file.name : 'Seret & Lepas file ke sini, atau klik untuk memilih'}
+                Seret & Lepas file ke sini, atau klik untuk memilih
               </p>
               <span style={{ color: '#888', fontSize: '13px' }}>
-                {file ? `Ukuran: ${(file.size / 1024 / 1024).toFixed(2)} MB` : 'Maks. 50MB (JPG, PNG, MP4, PDF)'}
+                Maks. 50MB per file (JPG, PNG, MP4, PDF)
               </span>
             </div>
+
+            {/* Daftar file yang sudah dipilih */}
+            {files.length > 0 && (
+              <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {files.map((f, idx) => (
+                  <div key={idx} style={styles.fileItem}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
+                      <span style={{ fontSize: '20px' }}>📄</span>
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</p>
+                        <span style={{ color: '#666', fontSize: '12px' }}>{(f.size / 1024 / 1024).toFixed(2)} MB</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); removeFile(idx); }}
+                      style={styles.removeBtn}
+                      title="Hapus file"
+                    >✕</button>
+                  </div>
+                ))}
+                <p style={{ color: '#888', fontSize: '12px', margin: '4px 0 0' }}>
+                  Total: {files.length} file ({(files.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024).toFixed(2)} MB)
+                </p>
+              </div>
+            )}
+
             <span style={{ display: 'block', marginTop: '10px', color: '#555', fontSize: '12px' }}>
-              *File bukti Anda akan dienkripsi secara lokal di browser sebelum diunggah ke IPFS.
+              *Semua file bukti Anda akan dienkripsi secara lokal di browser sebelum diunggah ke IPFS.
             </span>
           </div>
 
@@ -294,6 +335,31 @@ const styles = {
   uploadIcon: {
     fontSize: '40px',
     marginBottom: '10px'
+  },
+  fileItem: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: '10px',
+    padding: '10px 14px',
+    gap: '10px'
+  },
+  removeBtn: {
+    background: 'rgba(255,77,77,0.15)',
+    border: '1px solid rgba(255,77,77,0.3)',
+    color: '#ff4d4d',
+    borderRadius: '6px',
+    width: '28px',
+    height: '28px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    transition: 'all 0.2s ease'
   },
   checkboxGroup: {
     display: 'flex',
