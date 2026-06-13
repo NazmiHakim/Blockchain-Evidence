@@ -35,49 +35,58 @@ const EvidenceViewer = ({ ipfsHash, fileType, encryptionKey }) => {
 
         const tryDownload = async (fileName, timeout = 30000) => {
           const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+          // ipfs.js uploads dengan prefix 'data/', jadi coba path itu dulu
+          // lalu fallback ke root path untuk backward compatibility
+          const pathVariants = [`data/${fileName}`, fileName];
 
           for (const gateway of gateways) {
-            const url = `${gateway}/${encodeURIComponent(fileName)}`;
-            
-            // Retry hingga 3x dengan exponential backoff untuk 429 (rate limit)
-            for (let attempt = 0; attempt < 3; attempt++) {
-              try {
-                if (attempt > 0) {
-                  const waitMs = 2000 * Math.pow(2, attempt - 1); // 2s, 4s
-                  console.log(`[IPFS] ⏳ Rate limited, menunggu ${waitMs / 1000}s sebelum retry...`);
-                  await delay(waitMs);
-                }
-                
-                console.log(`[IPFS] Mencoba: ${url}${attempt > 0 ? ` (retry ${attempt})` : ''}`);
-                const res = await axios.get(url, {
-                  responseType: 'arraybuffer',
-                  timeout
-                });
+            for (const path of pathVariants) {
+              const url = `${gateway}/${encodeURIComponent(path).replace(/%2F/g, '/')}`;
+              
+              // Retry hingga 3x dengan exponential backoff untuk 429 (rate limit)
+              for (let attempt = 0; attempt < 3; attempt++) {
+                try {
+                  if (attempt > 0) {
+                    const waitMs = 2000 * Math.pow(2, attempt - 1); // 2s, 4s
+                    console.log(`[IPFS] ⏳ Rate limited, menunggu ${waitMs / 1000}s sebelum retry...`);
+                    await delay(waitMs);
+                  }
+                  
+                  console.log(`[IPFS] Mencoba: ${url}${attempt > 0 ? ` (retry ${attempt})` : ''}`);
+                  const res = await axios.get(url, {
+                    responseType: 'arraybuffer',
+                    timeout
+                  });
 
-                // Validasi: respons harus > 12 byte (ukuran minimum IV AES-GCM)
-                if (!res.data || res.data.byteLength <= 12) {
-                  console.warn(`[IPFS] ${url} respons terlalu kecil (${res.data?.byteLength || 0} bytes). Skip.`);
-                  break; // Coba gateway lain
-                }
+                  // Validasi: respons harus > 12 byte (ukuran minimum IV AES-GCM)
+                  if (!res.data || res.data.byteLength <= 12) {
+                    console.warn(`[IPFS] ${url} respons terlalu kecil (${res.data?.byteLength || 0} bytes). Skip.`);
+                    break; // Coba path/gateway lain
+                  }
 
-                // Cek bukan HTML (beberapa gateway mengembalikan halaman error dengan status 200)
-                const firstBytes = new Uint8Array(res.data, 0, Math.min(20, res.data.byteLength));
-                const textSnippet = String.fromCharCode(...firstBytes);
-                if (textSnippet.startsWith('<!') || textSnippet.startsWith('<html')) {
-                  console.warn(`[IPFS] ${url} mengembalikan HTML, bukan data biner. Skip.`);
-                  break; // Coba gateway lain
-                }
+                  // Cek bukan HTML (beberapa gateway mengembalikan halaman error dengan status 200)
+                  const firstBytes = new Uint8Array(res.data, 0, Math.min(20, res.data.byteLength));
+                  const textSnippet = String.fromCharCode(...firstBytes);
+                  if (textSnippet.startsWith('<!') || textSnippet.startsWith('<html')) {
+                    console.warn(`[IPFS] ${url} mengembalikan HTML, bukan data biner. Skip.`);
+                    break; // Coba path/gateway lain
+                  }
 
-                console.log(`[IPFS] ✅ Berhasil: ${url} (${res.data.byteLength} bytes)`);
-                return res;
-              } catch (err) {
-                const is429 = err.response?.status === 429;
-                console.warn(`[IPFS] ${url} gagal: ${err.message}`);
-                
-                if (is429 && attempt < 2) {
-                  continue; // Retry gateway yang sama dengan backoff
+                  console.log(`[IPFS] ✅ Berhasil: ${url} (${res.data.byteLength} bytes)`);
+                  return res;
+                } catch (err) {
+                  const is429 = err.response?.status === 429;
+                  const is403or404 = err.response?.status === 403 || err.response?.status === 404;
+                  console.warn(`[IPFS] ${url} gagal: ${err.message}`);
+                  
+                  if (is429 && attempt < 2) {
+                    continue; // Retry gateway yang sama dengan backoff
+                  }
+                  if (is403or404) {
+                    break; // Path salah, coba variant berikutnya
+                  }
+                  break; // Error lain, coba gateway/path lain
                 }
-                break; // Coba gateway lain
               }
             }
           }
