@@ -45,7 +45,7 @@ const EvidenceViewer = ({ ipfsHash, fileType, encryptionKey }) => {
               let url = `${gateway}/${encodeURIComponent(path).replace(/%2F/g, '/')}`;
               
               // Tambahkan token gateway jika disetting dan menggunakan Pinata (Vite proxy /ipfs)
-              if (gatewayToken && gateway === '/ipfs') {
+              if (gatewayToken && gateway.startsWith('/ipfs/')) {
                 url += `?pinataGatewayToken=${gatewayToken}`;
               }
               
