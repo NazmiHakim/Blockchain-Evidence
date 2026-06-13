@@ -38,10 +38,16 @@ const EvidenceViewer = ({ ipfsHash, fileType, encryptionKey }) => {
           // ipfs.js uploads dengan prefix 'data/', jadi coba path itu dulu
           // lalu fallback ke root path untuk backward compatibility
           const pathVariants = [`data/${fileName}`, fileName];
+          const gatewayToken = import.meta.env.VITE_PINATA_GATEWAY_TOKEN;
 
           for (const gateway of gateways) {
             for (const path of pathVariants) {
-              const url = `${gateway}/${encodeURIComponent(path).replace(/%2F/g, '/')}`;
+              let url = `${gateway}/${encodeURIComponent(path).replace(/%2F/g, '/')}`;
+              
+              // Tambahkan token gateway jika disetting dan menggunakan Pinata (Vite proxy /ipfs)
+              if (gatewayToken && gateway === '/ipfs') {
+                url += `?pinataGatewayToken=${gatewayToken}`;
+              }
               
               // Retry hingga 3x dengan exponential backoff untuk 429 (rate limit)
               for (let attempt = 0; attempt < 3; attempt++) {
