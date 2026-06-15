@@ -91,11 +91,11 @@ cd Blockchain-Evidence
     ```
 3.  Buat file `.env` di dalam root folder `frontend/` dan isi variabel berikut:
     ```env
-    VITE_PINATA_API_KEY=805847b72b2b6111ac72
-    VITE_PINATA_SECRET_API_KEY=bd0e224c2d4fc11b5ff8d0886fbe5d5cf277e7d31c890a1c8da642f093735b6d
-    VITE_CONTRACT_ADDRESS=0x5FbDB2315678afecb367f032d93F642f64180aa3
-    VITE_PINATA_GATEWAY=gold-decisive-emu-871.mypinata.cloud
-    VITE_PINATA_GATEWAY_TOKEN=dGUF5AFJS7Su6z74xxJ4RIISc0Y2t8nyp1fiDaW3F7_o_xRHQDSu9mIIsJ9LX1u4
+    VITE_PINATA_API_KEY=your_pinata_api_key_here
+    VITE_PINATA_SECRET_API_KEY=your_pinata_secret_api_key_here
+    VITE_CONTRACT_ADDRESS=your_deployed_contract_address_here
+    VITE_PINATA_GATEWAY=your_pinata_gateway_domain_here
+    VITE_PINATA_GATEWAY_TOKEN=your_pinata_gateway_token_here
     ```
 4.  Jalankan server pengembangan frontend:
     ```bash
